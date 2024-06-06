@@ -34,7 +34,6 @@
 #include <rtems/bdbuf.h>
 #include <rtems/bsd/bsd.h>
 #include <rtems/console.h>
-#include <rtems/ftpd.h>
 #include <rtems/libio.h>
 #include <rtems/malloc.h>
 #include <rtems/media.h>
@@ -66,7 +65,7 @@
 #define INI_FILENAME "grisp.ini"
 #define DHCP_CONF_FILENAME "dhcpcd.conf"
 
-#define STACK_SIZE_INIT_TASK (64 * 1024)
+#define STACK_SIZE_INIT_TASK (512 * 1024)
 
 #define PRIO_DHCP (RTEMS_MAXIMUM_PRIORITY - 1)
 #define PRIO_WPA (RTEMS_MAXIMUM_PRIORITY - 1)
@@ -207,6 +206,12 @@ static const char *default_erl_args = "erl.rtems -- "
 static char *argv[MAX_ARGC];
 static int argc;
 
+// Function prototypes
+void fatal_extension(rtems_fatal_source source, bool is_internal, rtems_fatal_code error);
+void fatal_atexit(void);
+char* silence_erl_console(char *args);
+void set_grisp_hostname(struct grisp_eeprom *eeprom);
+
 static char *strdupcat(const char *s1, const char *s2) {
   char *res;
   int len;
@@ -229,7 +234,7 @@ int munmap(void *addr, size_t len) {
   return -1;
 }
 
-void fatal_extension(uint32_t source, uint32_t is_internal, uint32_t error) {
+void fatal_extension(rtems_fatal_source source, bool is_internal, rtems_fatal_code error) {
   printk("\n\nfatal extension: source=%ld, is_internal=%ld, error=%ld\n",
          source, is_internal, error);
   if (source == RTEMS_FATAL_SOURCE_EXCEPTION)
@@ -452,7 +457,6 @@ void set_grisp_hostname(struct grisp_eeprom *eeprom) {
 }
 
 static void Init(rtems_task_argument arg) {
-  printf("[ERL] Initializing\n");
   rtems_status_code sc = RTEMS_SUCCESSFUL;
   int rv = 0;
   static char pwd[1024];
@@ -461,6 +465,16 @@ static void Init(rtems_task_argument arg) {
   static char dhcpfile[192];
   char *p;
   struct grisp_eeprom eeprom = {0};
+
+#ifdef GRISP_PLATFORM_GRISP2
+
+  const void *fdt;
+  int node_offset;
+  int len;
+
+#endif
+
+  printf("[ERL] Initializing\n");
 
   atexit(fatal_atexit);
 
@@ -504,10 +518,6 @@ static void Init(rtems_task_argument arg) {
   }
 
 #ifdef GRISP_PLATFORM_GRISP2
-
-  const void *fdt;
-  int node_offset;
-  int len;
 
   fdt = bsp_fdt_get();
   node_offset = fdt_path_offset(fdt, FDT_MOUNTPOINT_NODE);
@@ -669,6 +679,7 @@ static void Init(rtems_task_argument arg) {
 #define CONFIGURE_INIT_TASK_STACK_SIZE STACK_SIZE_INIT_TASK
 #define CONFIGURE_INIT_TASK_INITIAL_MODES RTEMS_DEFAULT_MODES
 #define CONFIGURE_INIT_TASK_ATTRIBUTES RTEMS_FLOATING_POINT
+#define CONFIGURE_INIT_TASK_PRIORITY 10
 
 #define CONFIGURE_BDBUF_BUFFER_MAX_SIZE (32 * 1024)
 #define CONFIGURE_BDBUF_MAX_READ_AHEAD_BLOCKS 4
@@ -685,14 +696,40 @@ static void Init(rtems_task_argument arg) {
 
 #define CONFIGURE_RTEMS_INIT_TASKS_TABLE
 
-#define CONFIGURE_INIT_TASK_STACK_SIZE (512 * 1024)
-#define CONFIGURE_INIT_TASK_PRIORITY 10
-
 #define CONFIGURE_MINIMUM_TASK_STACK_SIZE (64 * 1024)
 
 #define CONFIGURE_INIT
 
 #include <rtems/confdefs.h>
+
+/*
+ * Configure Shell.
+ */
+#include <rtems/netcmds-config.h>
+#include <bsp/irq-info.h>
+#define CONFIGURE_SHELL_COMMANDS_INIT
+
+#define CONFIGURE_SHELL_USER_COMMANDS \
+  &bsp_interrupt_shell_command, \
+  &rtems_shell_RTEMS_Command, \
+  &rtems_shell_ARP_Command, \
+  &rtems_shell_PFCTL_Command, \
+  &rtems_shell_PING_Command, \
+  &rtems_shell_IFCONFIG_Command, \
+  &rtems_shell_ROUTE_Command, \
+  &rtems_shell_NETSTAT_Command, \
+  &rtems_shell_DHCPCD_Command, \
+  &rtems_shell_HOSTNAME_Command, \
+  &rtems_shell_SYSCTL_Command, \
+  &rtems_shell_VMSTAT_Command, \
+  &rtems_shell_WLANSTATS_Command, \
+  &rtems_shell_BLKSTATS_Command, \
+  &rtems_shell_WPA_SUPPLICANT_Command, \
+  &rtems_shell_WPA_SUPPLICANT_FORK_Command
+
+#define CONFIGURE_SHELL_COMMANDS_ALL
+
+#include <rtems/shellconfig.h>
 
 #else
 int main(int argc, char **argv) {

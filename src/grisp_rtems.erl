@@ -14,6 +14,7 @@
 -export([write_file_to_device/2]).
 -export([write_file_to_device/4]).
 -export([pwrite/3]).
+-export([command/1]).
 
 % Callbacks
 -export([on_load/0]).
@@ -99,6 +100,17 @@ write_file_to_device(FilePath, DevicePath, ReadChunkSize, WriteChunkSize) ->
 pwrite(DevicePath, Buffer, Offset) ->
     pwrite_nif([DevicePath, 0], [Buffer], Offset).
 
+%TODO: Some doc
+command([Cmd | _] = ArgList)
+  when is_list(ArgList), is_list(Cmd) orelse is_binary(Cmd) ->
+    [CommandBin | _] = ArgListBin = [as_binary(Arg) || Arg <- ArgList],
+    shell_execute_cmd_nif(CommandBin, ArgListBin).
+% command(CommandLine)
+%   when is_list(CommandLine), is_binary(CommandLine) ->
+%     CommandLineBin = iolist_to_binary(CommandLine),
+%     {ok, [Command | _] = ArgList} = shell_make_args_nif(CommandLineBin),
+%     shell_execute_cmd_nif(Command, ArgList).
+
 %--- Callbacks -----------------------------------------------------------------
 
 % @private
@@ -148,3 +160,10 @@ write_loop(DevicePath, Chunk, WriteChunkSize, Offset, ChunkBytesWritten) ->
                     Error
             end
     end.
+
+% shell_make_args_nif(CommanLine) -> ?NIF_STUB([CommanLine]).
+shell_execute_cmd_nif(Command, Args) -> ?NIF_STUB([Command, Args]).
+
+as_binary(Arg) when is_binary(Arg) -> Arg;
+as_binary(Arg) when is_atom(Arg) -> atom_to_binary(Arg, utf8);
+as_binary(Arg) when is_list(Arg) -> list_to_binary(Arg).
