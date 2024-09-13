@@ -29,7 +29,8 @@
 -export([handle_cast/2]).
 
 
-% Includes
+%--- Includes ------------------------------------------------------------------
+
 -include("ieee802154.hrl").
 -include("ieee802154_pib.hrl").
 -include("mac_frame.hrl").
